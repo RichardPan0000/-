@@ -62,3 +62,40 @@ sudo docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu20.04 nvidia-smi
 出现下面的显示，表示正常。
 
 ![img](https://i-blog.csdnimg.cn/blog_migrate/b0e3ee52ac0143e563abad7eb9bd9b5b.png)
+
+
+
+
+
+## 2、docker常用加速源
+
+https://blog.csdn.net/llc580231/article/details/139979603
+
+
+
+vim  /etc/docker/daemon.json
+
+```
+{
+  "registry-mirrors": [
+    "https://register.liberx.info",
+    "https://dockerpull.com",
+    "https://docker.anyhub.us.kg",
+    "https://dockerhub.jobcher.com",
+    "https://dockerhub.icu",
+    "https://docker.awsl9527.cn"
+    ]
+}
+```
+
+
+
+然后重启docker服务
+
+```
+# 重新加载配置文件
+sudo systemctl daemon-reload
+# 重新启动docker服务
+sudo service docker restart
+```
+

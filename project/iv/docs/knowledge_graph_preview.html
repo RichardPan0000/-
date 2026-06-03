@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IV诊断知识图谱可视化</title>
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        /* 顶部工具栏 */
+        .toolbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 56px;
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(99, 102, 241, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            z-index: 100;
+        }
+        .toolbar h1 {
+            font-size: 18px;
+            font-weight: 600;
+            background: linear-gradient(135deg, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .toolbar .subtitle {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 2px;
+        }
+        .toolbar-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .toolbar-actions button {
+            padding: 6px 14px;
+            border-radius: 6px;
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            background: rgba(99, 102, 241, 0.1);
+            color: #a5b4fc;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .toolbar-actions button:hover {
+            background: rgba(99, 102, 241, 0.25);
+            border-color: rgba(99, 102, 241, 0.5);
+        }
+        .toolbar-actions button.active {
+            background: rgba(99, 102, 241, 0.4);
+            border-color: #6366f1;
+            color: #fff;
+        }
+        .legend {
+            display: flex;
+            gap: 16px;
+            font-size: 12px;
+            color: #94a3b8;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .legend-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+        }
+
+        /* 图表容器 */
+        #network {
+            width: 100%;
+            height: 100vh;
+            margin-top: 56px;
+        }
+
+        /* 侧边信息面板 */
+        .info-panel {
+            position: fixed;
+            top: 56px;
+            right: -380px;
+            width: 380px;
+            height: calc(100vh - 56px);
+            background: rgba(15, 23, 42, 0.97);
+            backdrop-filter: blur(12px);
+            border-left: 1px solid rgba(99, 102, 241, 0.2);
+            transition: right 0.3s ease;
+            z-index: 90;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        .info-panel.open {
+            right: 0;
+        }
+        .info-panel h3 {
+            font-size: 16px;
+            margin-bottom: 12px;
+            color: #a5b4fc;
+        }
+        .info-panel .close-btn {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: none;
+            border: none;
+            color: #64748b;
+            font-size: 20px;
+            cursor: pointer;
+        }
+        .info-panel .close-btn:hover { color: #e2e8f0; }
+
+        .node-detail {
+            margin-bottom: 16px;
+        }
+        .node-detail .label {
+            font-size: 11px;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+        .node-detail .value {
+            font-size: 14px;
+            color: #e2e8f0;
+            line-height: 1.6;
+        }
+        .weight-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 4px 0;
+        }
+        .weight-bar .bar {
+            flex: 1;
+            height: 6px;
+            background: rgba(99, 102, 241, 0.1);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .weight-bar .bar-fill {
+            height: 100%;
+            border-radius: 3px;
+            background: linear-gradient(90deg, #6366f1, #a78bfa);
+            transition: width 0.3s;
+        }
+        .weight-bar .bar-label {
+            font-size: 12px;
+            color: #94a3b8;
+            min-width: 80px;
+        }
+        .weight-bar .bar-value {
+            font-size: 12px;
+            color: #a5b4fc;
+            min-width: 30px;
+            text-align: right;
+        }
+
+        /* 统计卡片 */
+        .stats {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            display: flex;
+            gap: 12px;
+            z-index: 80;
+        }
+        .stat-card {
+            background: rgba(15, 23, 42, 0.9);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            border-radius: 8px;
+            padding: 12px 16px;
+            text-align: center;
+        }
+        .stat-card .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .stat-card .stat-label {
+            font-size: 11px;
+            color: #64748b;
+            margin-top: 2px;
+        }
+
+        /* 生成信息 */
+        .gen-info {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            font-size: 11px;
+            color: #475569;
+            z-index: 80;
+        }
+    </style>
+</head>
+<body>
+
+<!-- 顶部工具栏 -->
+<div class="toolbar">
+    <div>
+        <h1>IV诊断知识图谱</h1>
+        <div class="subtitle">Phenomenon ↔ Cause Mapping · 12个表象 · 21个根因 · 82条诊断边 · 82条验证边</div>
+    </div>
+    <div style="display:flex; align-items:center; gap:20px;">
+        <div class="legend">
+            <div class="legend-item"><div class="legend-dot" style="background:#6366f1;"></div> 表象节点</div>
+            <div class="legend-item"><div class="legend-dot" style="background:#f59e0b;"></div> 根因节点</div>
+            <div class="legend-item"><div class="legend-dot" style="background:rgba(139,92,246,0.6); border-radius:0; height:3px; width:20px;"></div> 诊断边</div>
+            <div class="legend-item"><div class="legend-dot" style="background:#22c55e; border-radius:0; height:3px; width:20px; border-top:2px dashed #22c55e; background:none;"></div> 验证边</div>
+            <div class="legend-item"><div class="legend-dot" style="background:#ef4444; opacity:0.5;"></div> 矛盾规则</div>
+        </div>
+        <div class="toolbar-actions">
+            <button onclick="togglePhysics()" id="physicsBtn">物理模拟: 开</button>
+            <button onclick="toggleExpected()" id="expectedBtn" class="active">验证边: 开</button>
+            <button onclick="resetView()">重置视图</button>
+        </div>
+    </div>
+</div>
+
+<!-- 网络图 -->
+<div id="network"></div>
+
+<!-- 侧边信息面板 -->
+<div class="info-panel" id="infoPanel">
+    <button class="close-btn" onclick="closePanel()">✕</button>
+    <div id="panelContent"></div>
+</div>
+
+<!-- 底部统计 -->
+<div class="stats">
+    <div class="stat-card">
+        <div class="stat-value">12</div>
+        <div class="stat-label">表象指标</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">21</div>
+        <div class="stat-label">根因类型</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">82</div>
+        <div class="stat-label">诊断边</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">82</div>
+        <div class="stat-label">验证边</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">6</div>
+        <div class="stat-label">矛盾规则</div>
+    </div>
+</div>
+
+<div class="gen-info">生成时间: 2026-05-07 15:06:38</div>
+
+<script>
+// =============================================================================
+// 知识图谱数据（从 knowledge_graph.yaml 自动生成）
+// =============================================================================
+
+const PHENOMENON_NODES = [
+    { id: "dIsc", label: "dIsc\n短路电流↓", threshold: "5%", type: "numeric", desc: "短路电流偏差" },
+    { id: "dVoc", label: "dVoc\n开路电压↓", threshold: "5%", type: "numeric", desc: "开路电压偏差" },
+    { id: "dImp", label: "dImp\nMPP电流↓", threshold: "5%", type: "numeric", desc: "MPP电流偏差" },
+    { id: "dVmp", label: "dVmp\nMPP电压↓", threshold: "5%", type: "numeric", desc: "MPP电压偏差" },
+    { id: "dPmp", label: "dPmp\n最大功率↓", threshold: "5%", type: "numeric", desc: "最大功率偏差" },
+    { id: "dFF", label: "dFF\n填充因子↓", threshold: "2%", type: "numeric", desc: "填充因子偏差" },
+    { id: "Rs", label: "Rs\n串联电阻↑", threshold: "bool", type: "bool", desc: "串联电阻偏高（接触/线路/焊点电阻增大）" },
+    { id: "Rsh", label: "Rsh\n并联电阻↓", threshold: "bool", type: "bool", desc: "并联电阻偏低（存在漏电/分流通道）" },
+    { id: "prestep", label: "prestep\nMPP前台阶", threshold: "bool", type: "bool", desc: "MPP前台阶" },
+    { id: "poststep", label: "poststep\nMPP后台阶", threshold: "bool", type: "bool", desc: "MPP后台阶" },
+    { id: "step", label: "step", threshold: "bool", type: "bool", desc: "IV曲线台阶（prestep或poststep任一检出）" },
+    { id: "Isc_near_zero", label: "Isc≈0\n电流接近零", threshold: "90%", type: "special", desc: "短路电流接近零" }
+];
+
+const CAUSE_NODES = [
+    { id: "c_均匀遮挡/灰尘", label: "均匀遮挡\n/灰尘", category: "电流型", severity: "medium", desc: "均匀遮挡、灰尘覆盖导致光吸收减少" },
+    { id: "c_组件老化", label: "组件老化", category: "电流型", severity: "medium", desc: "长期老化导致电池性能下降" },
+    { id: "c_辐照测量偏差", label: "辐照测量偏差", category: "电流型", severity: "low", desc: "辐照传感器故障或位置不当" },
+    { id: "c_电流失配", label: "电流失配", category: "电流型", severity: "medium", desc: "组件间电流不一致" },
+    { id: "c_旁路二极管故障", label: "旁路二极管故障", category: "电压型", severity: "high", desc: "旁路二极管短路或异常导通，短路时Voc阶梯下降，异常导通时产生台阶" },
+    { id: "c_PID效应", label: "PID效应", category: "电压型", severity: "high", desc: "电势诱导衰减，钠离子迁移造成分流通道" },
+    { id: "c_温度测量偏差", label: "温度测量偏差", category: "电压型", severity: "low", desc: "温度传感器故障导致温度补偿错误" },
+    { id: "c_少接组件", label: "少接组件", category: "电压型", severity: "high", desc: "组串中组件数量不足" },
+    { id: "c_热斑效应", label: "热斑效应", category: "台阶型", severity: "high", desc: "热斑区域电池成为负载，触发旁路" },
+    { id: "c_串联电阻增大", label: "串联电阻增大", category: "串联电阻型", severity: "medium", desc: "综合串联电阻升高" },
+    { id: "c_并联电阻下降", label: "并联电阻下降", category: "并联电阻型", severity: "medium", desc: "并联电阻异常下降" },
+    { id: "c_连接器接触不良", label: "连接器接触不良", category: "串联电阻型", severity: "medium", desc: "MC4连接器氧化、松动" },
+    { id: "c_线缆老化", label: "线缆老化", category: "串联电阻型", severity: "medium", desc: "线缆绝缘老化、铜芯氧化" },
+    { id: "c_焊点退化", label: "焊点退化", category: "串联电阻型", severity: "medium", desc: "电池片互连焊点疲劳退化" },
+    { id: "c_局部漏电", label: "局部漏电", category: "并联电阻型", severity: "medium", desc: "微裂纹、边缘漏电形成旁路通道" },
+    { id: "c_灰尘污渍导电", label: "灰尘污渍导电", category: "并联电阻型", severity: "low", desc: "严重灰尘可能形成导电通道" },
+    { id: "c_局部遮挡", label: "局部遮挡", category: "台阶型", severity: "medium", desc: "局部遮挡导致子串电流不匹配" },
+    { id: "c_隐裂", label: "隐裂", category: "台阶型", severity: "high", desc: "隐裂导致电池片部分区域电学隔离" },
+    { id: "c_不均匀脏污", label: "不均匀脏污", category: "台阶型", severity: "medium", desc: "非均匀分布的脏污导致子串间电流差异" },
+    { id: "c_玻璃碎裂", label: "玻璃碎裂", category: "台阶型", severity: "high", desc: "玻璃碎裂区域光透过率大幅下降" },
+    { id: "c_组串断路", label: "组串断路", category: "开路型", severity: "critical", desc: "组串电流通路断开（可能原因：组串开路、熔丝熔断、接线端子松动/腐蚀、MC4连接器损坏）" }
+];
+
+// 映射边（表象 → 根因，带权重）
+const EDGES = [
+    { from: "dIsc", to: "c_均匀遮挡/灰尘", weight: 1.0, desc: "dIsc→均匀遮挡/灰尘 权重1.0" },
+    { from: "dIsc", to: "c_组件老化", weight: 0.7, desc: "dIsc→组件老化 权重0.7" },
+    { from: "dIsc", to: "c_辐照测量偏差", weight: 0.3, desc: "dIsc→辐照测量偏差 权重0.3" },
+    { from: "dIsc", to: "c_电流失配", weight: 0.5, desc: "dIsc→电流失配 权重0.5" },
+    { from: "dIsc", to: "c_局部遮挡", weight: 0.3, desc: "dIsc→局部遮挡 权重0.3" },
+    { from: "dIsc", to: "c_不均匀脏污", weight: 0.3, desc: "dIsc→不均匀脏污 权重0.3" },
+    { from: "dIsc", to: "c_隐裂", weight: 0.3, desc: "dIsc→隐裂 权重0.3" },
+    { from: "dIsc", to: "c_玻璃碎裂", weight: 0.2, desc: "dIsc→玻璃碎裂 权重0.2" },
+    { from: "dIsc", to: "c_PID效应", weight: 0.3, desc: "dIsc→PID效应 权重0.3" },
+    { from: "dVoc", to: "c_旁路二极管故障", weight: 1.0, desc: "dVoc→旁路二极管故障 权重1.0" },
+    { from: "dVoc", to: "c_PID效应", weight: 0.8, desc: "dVoc→PID效应 权重0.8" },
+    { from: "dVoc", to: "c_温度测量偏差", weight: 0.5, desc: "dVoc→温度测量偏差 权重0.5" },
+    { from: "dVoc", to: "c_少接组件", weight: 0.8, desc: "dVoc→少接组件 权重0.8" },
+    { from: "dVoc", to: "c_热斑效应", weight: 0.5, desc: "dVoc→热斑效应 权重0.5" },
+    { from: "dVoc", to: "c_组件老化", weight: 0.3, desc: "dVoc→组件老化 权重0.3" },
+    { from: "dVoc", to: "c_局部漏电", weight: 0.3, desc: "dVoc→局部漏电 权重0.3" },
+    { from: "dVoc", to: "c_并联电阻下降", weight: 0.3, desc: "dVoc→并联电阻下降 权重0.3" },
+    { from: "dImp", to: "c_均匀遮挡/灰尘", weight: 1.0, desc: "dImp→均匀遮挡/灰尘 权重1.0" },
+    { from: "dImp", to: "c_组件老化", weight: 0.6, desc: "dImp→组件老化 权重0.6" },
+    { from: "dImp", to: "c_电流失配", weight: 0.8, desc: "dImp→电流失配 权重0.8" },
+    { from: "dImp", to: "c_辐照测量偏差", weight: 0.4, desc: "dImp→辐照测量偏差 权重0.4" },
+    { from: "dImp", to: "c_局部遮挡", weight: 0.5, desc: "dImp→局部遮挡 权重0.5" },
+    { from: "dImp", to: "c_不均匀脏污", weight: 0.6, desc: "dImp→不均匀脏污 权重0.6" },
+    { from: "dImp", to: "c_隐裂", weight: 0.4, desc: "dImp→隐裂 权重0.4" },
+    { from: "dImp", to: "c_热斑效应", weight: 0.4, desc: "dImp→热斑效应 权重0.4" },
+    { from: "dImp", to: "c_玻璃碎裂", weight: 0.2, desc: "dImp→玻璃碎裂 权重0.2" },
+    { from: "dVmp", to: "c_旁路二极管故障", weight: 0.8, desc: "dVmp→旁路二极管故障 权重0.8" },
+    { from: "dVmp", to: "c_串联电阻增大", weight: 0.8, desc: "dVmp→串联电阻增大 权重0.8" },
+    { from: "dVmp", to: "c_热斑效应", weight: 0.6, desc: "dVmp→热斑效应 权重0.6" },
+    { from: "dVmp", to: "c_PID效应", weight: 0.5, desc: "dVmp→PID效应 权重0.5" },
+    { from: "dVmp", to: "c_局部遮挡", weight: 0.5, desc: "dVmp→局部遮挡 权重0.5" },
+    { from: "dVmp", to: "c_隐裂", weight: 0.4, desc: "dVmp→隐裂 权重0.4" },
+    { from: "dVmp", to: "c_不均匀脏污", weight: 0.3, desc: "dVmp→不均匀脏污 权重0.3" },
+    { from: "dVmp", to: "c_玻璃碎裂", weight: 0.2, desc: "dVmp→玻璃碎裂 权重0.2" },
+    { from: "dVmp", to: "c_连接器接触不良", weight: 0.4, desc: "dVmp→连接器接触不良 权重0.4" },
+    { from: "dVmp", to: "c_线缆老化", weight: 0.4, desc: "dVmp→线缆老化 权重0.4" },
+    { from: "dVmp", to: "c_焊点退化", weight: 0.4, desc: "dVmp→焊点退化 权重0.4" },
+    { from: "dVmp", to: "c_组件老化", weight: 0.4, desc: "dVmp→组件老化 权重0.4" },
+    { from: "dVmp", to: "c_少接组件", weight: 0.7, desc: "dVmp→少接组件 权重0.7" },
+    { from: "dVmp", to: "c_温度测量偏差", weight: 0.3, desc: "dVmp→温度测量偏差 权重0.3" },
+    { from: "dPmp", to: "c_均匀遮挡/灰尘", weight: 1.0, desc: "dPmp→均匀遮挡/灰尘 权重1.0" },
+    { from: "dPmp", to: "c_组件老化", weight: 0.7, desc: "dPmp→组件老化 权重0.7" },
+    { from: "dPmp", to: "c_热斑效应", weight: 0.6, desc: "dPmp→热斑效应 权重0.6" },
+    { from: "dPmp", to: "c_PID效应", weight: 0.5, desc: "dPmp→PID效应 权重0.5" },
+    { from: "dPmp", to: "c_局部遮挡", weight: 0.8, desc: "dPmp→局部遮挡 权重0.8" },
+    { from: "dPmp", to: "c_不均匀脏污", weight: 0.8, desc: "dPmp→不均匀脏污 权重0.8" },
+    { from: "dPmp", to: "c_玻璃碎裂", weight: 0.3, desc: "dPmp→玻璃碎裂 权重0.3" },
+    { from: "dPmp", to: "c_隐裂", weight: 0.6, desc: "dPmp→隐裂 权重0.6" },
+    { from: "dPmp", to: "c_电流失配", weight: 0.4, desc: "dPmp→电流失配 权重0.4" },
+    { from: "dPmp", to: "c_辐照测量偏差", weight: 0.3, desc: "dPmp→辐照测量偏差 权重0.3" },
+    { from: "dPmp", to: "c_少接组件", weight: 0.6, desc: "dPmp→少接组件 权重0.6" },
+    { from: "dPmp", to: "c_旁路二极管故障", weight: 0.6, desc: "dPmp→旁路二极管故障 权重0.6" },
+    { from: "dPmp", to: "c_并联电阻下降", weight: 0.3, desc: "dPmp→并联电阻下降 权重0.3" },
+    { from: "dPmp", to: "c_串联电阻增大", weight: 0.4, desc: "dPmp→串联电阻增大 权重0.4" },
+    { from: "dFF", to: "c_串联电阻增大", weight: 1.0, desc: "dFF→串联电阻增大 权重1.0" },
+    { from: "dFF", to: "c_并联电阻下降", weight: 0.8, desc: "dFF→并联电阻下降 权重0.8" },
+    { from: "dFF", to: "c_PID效应", weight: 0.8, desc: "dFF→PID效应 权重0.8" },
+    { from: "dFF", to: "c_均匀遮挡/灰尘", weight: 0.3, desc: "dFF→均匀遮挡/灰尘 权重0.3" },
+    { from: "dFF", to: "c_组件老化", weight: 0.4, desc: "dFF→组件老化 权重0.4" },
+    { from: "dFF", to: "c_连接器接触不良", weight: 0.6, desc: "dFF→连接器接触不良 权重0.6" },
+    { from: "dFF", to: "c_线缆老化", weight: 0.5, desc: "dFF→线缆老化 权重0.5" },
+    { from: "dFF", to: "c_焊点退化", weight: 0.5, desc: "dFF→焊点退化 权重0.5" },
+    { from: "dFF", to: "c_局部漏电", weight: 0.5, desc: "dFF→局部漏电 权重0.5" },
+    { from: "dFF", to: "c_灰尘污渍导电", weight: 0.3, desc: "dFF→灰尘污渍导电 权重0.3" },
+    { from: "Rs", to: "c_串联电阻增大", weight: 1.0, desc: "Rs→串联电阻增大 权重1.0" },
+    { from: "Rs", to: "c_连接器接触不良", weight: 1.0, desc: "Rs→连接器接触不良 权重1.0" },
+    { from: "Rs", to: "c_线缆老化", weight: 0.8, desc: "Rs→线缆老化 权重0.8" },
+    { from: "Rs", to: "c_焊点退化", weight: 0.7, desc: "Rs→焊点退化 权重0.7" },
+    { from: "Rs", to: "c_PID效应", weight: 0.3, desc: "Rs→PID效应 权重0.3" },
+    { from: "Rs", to: "c_组件老化", weight: 0.3, desc: "Rs→组件老化 权重0.3" },
+    { from: "Rsh", to: "c_并联电阻下降", weight: 1.0, desc: "Rsh→并联电阻下降 权重1.0" },
+    { from: "Rsh", to: "c_PID效应", weight: 1.0, desc: "Rsh→PID效应 权重1.0" },
+    { from: "Rsh", to: "c_局部漏电", weight: 0.8, desc: "Rsh→局部漏电 权重0.8" },
+    { from: "Rsh", to: "c_灰尘污渍导电", weight: 0.5, desc: "Rsh→灰尘污渍导电 权重0.5" },
+    { from: "step", to: "c_局部遮挡", weight: 1.0, desc: "step→局部遮挡 权重1.0" },
+    { from: "step", to: "c_热斑效应", weight: 0.55, desc: "step→热斑效应 权重0.55" },
+    { from: "step", to: "c_隐裂", weight: 0.6, desc: "step→隐裂 权重0.6" },
+    { from: "step", to: "c_旁路二极管故障", weight: 0.7, desc: "step→旁路二极管故障 权重0.7" },
+    { from: "step", to: "c_不均匀脏污", weight: 0.8, desc: "step→不均匀脏污 权重0.8" },
+    { from: "step", to: "c_玻璃碎裂", weight: 0.2, desc: "step→玻璃碎裂 权重0.2" },
+    { from: "step", to: "c_电流失配", weight: 0.3, desc: "step→电流失配 权重0.3" },
+    { from: "Isc_near_zero", to: "c_组串断路", weight: 1.0, desc: "Isc_near_zero→组串断路 权重1.0" }
+];
+
+// 期望表象边（根因 → 表象，反向验证）
+const EXPECTED_EDGES = [
+    { from: "c_均匀遮挡/灰尘", to: "dIsc", level: "required", desc: "均匀遮挡/灰尘→dIsc [required]" },
+    { from: "c_均匀遮挡/灰尘", to: "dImp", level: "required", desc: "均匀遮挡/灰尘→dImp [required]" },
+    { from: "c_均匀遮挡/灰尘", to: "dPmp", level: "required", desc: "均匀遮挡/灰尘→dPmp [required]" },
+    { from: "c_均匀遮挡/灰尘", to: "dFF", level: "expected", desc: "均匀遮挡/灰尘→dFF [expected]" },
+    { from: "c_组件老化", to: "dIsc", level: "required", desc: "组件老化→dIsc [required]" },
+    { from: "c_组件老化", to: "dImp", level: "required", desc: "组件老化→dImp [required]" },
+    { from: "c_组件老化", to: "dPmp", level: "required", desc: "组件老化→dPmp [required]" },
+    { from: "c_组件老化", to: "dFF", level: "expected", desc: "组件老化→dFF [expected]" },
+    { from: "c_组件老化", to: "dVmp", level: "expected", desc: "组件老化→dVmp [expected]" },
+    { from: "c_组件老化", to: "dVoc", level: "optional", desc: "组件老化→dVoc [optional]" },
+    { from: "c_组件老化", to: "Rs", level: "optional", desc: "组件老化→Rs [optional]" },
+    { from: "c_辐照测量偏差", to: "dIsc", level: "required", desc: "辐照测量偏差→dIsc [required]" },
+    { from: "c_辐照测量偏差", to: "dImp", level: "expected", desc: "辐照测量偏差→dImp [expected]" },
+    { from: "c_辐照测量偏差", to: "dPmp", level: "expected", desc: "辐照测量偏差→dPmp [expected]" },
+    { from: "c_电流失配", to: "dIsc", level: "required", desc: "电流失配→dIsc [required]" },
+    { from: "c_电流失配", to: "dImp", level: "required", desc: "电流失配→dImp [required]" },
+    { from: "c_电流失配", to: "dPmp", level: "expected", desc: "电流失配→dPmp [expected]" },
+    { from: "c_电流失配", to: "step", level: "optional", desc: "电流失配→step [optional]" },
+    { from: "c_旁路二极管故障", to: "dVoc", level: "required", desc: "旁路二极管故障→dVoc [required]" },
+    { from: "c_旁路二极管故障", to: "dVmp", level: "expected", desc: "旁路二极管故障→dVmp [expected]" },
+    { from: "c_旁路二极管故障", to: "dPmp", level: "expected", desc: "旁路二极管故障→dPmp [expected]" },
+    { from: "c_旁路二极管故障", to: "step", level: "optional", desc: "旁路二极管故障→step [optional]" },
+    { from: "c_PID效应", to: "dVoc", level: "required", desc: "PID效应→dVoc [required]" },
+    { from: "c_PID效应", to: "dFF", level: "required", desc: "PID效应→dFF [required]" },
+    { from: "c_PID效应", to: "Rsh", level: "required", desc: "PID效应→Rsh [required]" },
+    { from: "c_PID效应", to: "dVmp", level: "expected", desc: "PID效应→dVmp [expected]" },
+    { from: "c_PID效应", to: "dPmp", level: "expected", desc: "PID效应→dPmp [expected]" },
+    { from: "c_PID效应", to: "Rs", level: "optional", desc: "PID效应→Rs [optional]" },
+    { from: "c_PID效应", to: "dIsc", level: "optional", desc: "PID效应→dIsc [optional]" },
+    { from: "c_温度测量偏差", to: "dVoc", level: "required", desc: "温度测量偏差→dVoc [required]" },
+    { from: "c_温度测量偏差", to: "dVmp", level: "optional", desc: "温度测量偏差→dVmp [optional]" },
+    { from: "c_少接组件", to: "dVoc", level: "required", desc: "少接组件→dVoc [required]" },
+    { from: "c_少接组件", to: "dVmp", level: "required", desc: "少接组件→dVmp [required]" },
+    { from: "c_少接组件", to: "dPmp", level: "required", desc: "少接组件→dPmp [required]" },
+    { from: "c_热斑效应", to: "dPmp", level: "required", desc: "热斑效应→dPmp [required]" },
+    { from: "c_热斑效应", to: "dVmp", level: "required", desc: "热斑效应→dVmp [required]" },
+    { from: "c_热斑效应", to: "dImp", level: "expected", desc: "热斑效应→dImp [expected]" },
+    { from: "c_热斑效应", to: "step", level: "optional", desc: "热斑效应→step [optional]" },
+    { from: "c_热斑效应", to: "dVoc", level: "optional", desc: "热斑效应→dVoc [optional]" },
+    { from: "c_串联电阻增大", to: "dFF", level: "required", desc: "串联电阻增大→dFF [required]" },
+    { from: "c_串联电阻增大", to: "dVmp", level: "required", desc: "串联电阻增大→dVmp [required]" },
+    { from: "c_串联电阻增大", to: "Rs", level: "required", desc: "串联电阻增大→Rs [required]" },
+    { from: "c_串联电阻增大", to: "dPmp", level: "expected", desc: "串联电阻增大→dPmp [expected]" },
+    { from: "c_并联电阻下降", to: "dFF", level: "required", desc: "并联电阻下降→dFF [required]" },
+    { from: "c_并联电阻下降", to: "Rsh", level: "required", desc: "并联电阻下降→Rsh [required]" },
+    { from: "c_并联电阻下降", to: "dVoc", level: "optional", desc: "并联电阻下降→dVoc [optional]" },
+    { from: "c_并联电阻下降", to: "dPmp", level: "optional", desc: "并联电阻下降→dPmp [optional]" },
+    { from: "c_连接器接触不良", to: "Rs", level: "required", desc: "连接器接触不良→Rs [required]" },
+    { from: "c_连接器接触不良", to: "dFF", level: "required", desc: "连接器接触不良→dFF [required]" },
+    { from: "c_连接器接触不良", to: "dVmp", level: "expected", desc: "连接器接触不良→dVmp [expected]" },
+    { from: "c_线缆老化", to: "Rs", level: "required", desc: "线缆老化→Rs [required]" },
+    { from: "c_线缆老化", to: "dFF", level: "required", desc: "线缆老化→dFF [required]" },
+    { from: "c_线缆老化", to: "dVmp", level: "expected", desc: "线缆老化→dVmp [expected]" },
+    { from: "c_焊点退化", to: "Rs", level: "required", desc: "焊点退化→Rs [required]" },
+    { from: "c_焊点退化", to: "dFF", level: "required", desc: "焊点退化→dFF [required]" },
+    { from: "c_焊点退化", to: "dVmp", level: "expected", desc: "焊点退化→dVmp [expected]" },
+    { from: "c_局部漏电", to: "Rsh", level: "required", desc: "局部漏电→Rsh [required]" },
+    { from: "c_局部漏电", to: "dFF", level: "required", desc: "局部漏电→dFF [required]" },
+    { from: "c_局部漏电", to: "dVoc", level: "optional", desc: "局部漏电→dVoc [optional]" },
+    { from: "c_灰尘污渍导电", to: "Rsh", level: "required", desc: "灰尘污渍导电→Rsh [required]" },
+    { from: "c_灰尘污渍导电", to: "dFF", level: "expected", desc: "灰尘污渍导电→dFF [expected]" },
+    { from: "c_局部遮挡", to: "step", level: "required", desc: "局部遮挡→step [required]" },
+    { from: "c_局部遮挡", to: "dPmp", level: "required", desc: "局部遮挡→dPmp [required]" },
+    { from: "c_局部遮挡", to: "dImp", level: "expected", desc: "局部遮挡→dImp [expected]" },
+    { from: "c_局部遮挡", to: "dVmp", level: "expected", desc: "局部遮挡→dVmp [expected]" },
+    { from: "c_局部遮挡", to: "dIsc", level: "optional", desc: "局部遮挡→dIsc [optional]" },
+    { from: "c_隐裂", to: "dPmp", level: "required", desc: "隐裂→dPmp [required]" },
+    { from: "c_隐裂", to: "dImp", level: "expected", desc: "隐裂→dImp [expected]" },
+    { from: "c_隐裂", to: "step", level: "expected", desc: "隐裂→step [expected]" },
+    { from: "c_隐裂", to: "dIsc", level: "optional", desc: "隐裂→dIsc [optional]" },
+    { from: "c_隐裂", to: "dVmp", level: "optional", desc: "隐裂→dVmp [optional]" },
+    { from: "c_不均匀脏污", to: "step", level: "required", desc: "不均匀脏污→step [required]" },
+    { from: "c_不均匀脏污", to: "dPmp", level: "required", desc: "不均匀脏污→dPmp [required]" },
+    { from: "c_不均匀脏污", to: "dImp", level: "expected", desc: "不均匀脏污→dImp [expected]" },
+    { from: "c_不均匀脏污", to: "dIsc", level: "optional", desc: "不均匀脏污→dIsc [optional]" },
+    { from: "c_不均匀脏污", to: "dVmp", level: "optional", desc: "不均匀脏污→dVmp [optional]" },
+    { from: "c_玻璃碎裂", to: "dPmp", level: "required", desc: "玻璃碎裂→dPmp [required]" },
+    { from: "c_玻璃碎裂", to: "step", level: "optional", desc: "玻璃碎裂→step [optional]" },
+    { from: "c_玻璃碎裂", to: "dIsc", level: "optional", desc: "玻璃碎裂→dIsc [optional]" },
+    { from: "c_玻璃碎裂", to: "dImp", level: "optional", desc: "玻璃碎裂→dImp [optional]" },
+    { from: "c_玻璃碎裂", to: "dVmp", level: "optional", desc: "玻璃碎裂→dVmp [optional]" },
+    { from: "c_组串断路", to: "Isc_near_zero", level: "required", desc: "组串断路→Isc_near_zero [required]" }
+];
+
+// 矛盾规则
+const CONTRADICTIONS = [
+    { from: "Isc_near_zero", to: "dIsc", type: "exclusive", desc: "电流接近0时，IV曲线无有效信息，所有其他指标无诊断意义" },
+    { from: "Isc_near_zero", to: "dVoc", type: "exclusive", desc: "电流接近0时，IV曲线无有效信息，所有其他指标无诊断意义" },
+    { from: "Isc_near_zero", to: "dImp", type: "exclusive", desc: "电流接近0时，IV曲线无有效信息，所有其他指标无诊断意义" },
+    { from: "Isc_near_zero", to: "dVmp", type: "exclusive", desc: "电流接近0时，IV曲线无有效信息，所有其他指标无诊断意义" },
+    { from: "Isc_near_zero", to: "dPmp", type: "exclusive", desc: "电流接近0时，IV曲线无有效信息，所有其他指标无诊断意义" },
+    { from: "Isc_near_zero", to: "dFF", type: "exclusive", desc: "电流接近0时，IV曲线无有效信息，所有其他指标无诊断意义" },
+    { from: "Isc_near_zero", to: "Rs", type: "exclusive", desc: "电流接近0时，IV曲线无有效信息，所有其他指标无诊断意义" },
+    { from: "Isc_near_zero", to: "Rsh", type: "exclusive", desc: "电流接近0时，IV曲线无有效信息，所有其他指标无诊断意义" },
+    { from: "Isc_near_zero", to: "step", type: "exclusive", desc: "电流接近0时，IV曲线无有效信息，所有其他指标无诊断意义" },
+    { from: "Rsh", to: "Rs", type: "priority", desc: "Rsh下降是更根本的故障" }
+];
+
+// =============================================================================
+// 构建 vis.js 数据
+// =============================================================================
+
+const severityColors = {"critical": "#ef4444", "high": "#f97316", "medium": "#f59e0b", "low": "#22c55e"};
+const categoryIcons = {"电流型": "🌤️", "电压型": "⚡", "台阶型": "📊", "串联电阻型": "🔌", "并联电阻型": "🔻", "开路型": "🔴"};
+
+// 构建节点
+const nodes = new vis.DataSet([]);
+
+// 表象节点
+PHENOMENON_NODES.forEach(p => {
+    nodes.update({
+        id: p.id,
+        label: p.label,
+        group: "phenomenon",
+        color: {
+            background: "#1e1b4b",
+            border: "#6366f1",
+            highlight: { background: "#312e81", border: "#818cf8" },
+            hover: { background: "#1e1b4b", border: "#a5b4fc" },
+        },
+        font: { color: "#c7d2fe", size: 13, face: "sans-serif", multi: true },
+        shape: "box",
+        borderWidth: 2,
+        borderWidthSelected: 3,
+        shadow: { enabled: true, color: "rgba(99,102,241,0.2)", size: 10 },
+        title: `<b>${p.id}</b><br>阈值: ${p.threshold}<br>类型: ${p.type}<br>${p.desc}`,
+        physics: true,
+    });
+});
+
+// 根因节点
+CAUSE_NODES.forEach(c => {
+    const sevColor = severityColors[c.severity] || "#f59e0b";
+    nodes.update({
+        id: c.id,
+        label: c.label,
+        group: "cause",
+        color: {
+            background: `${sevColor}22`,
+            border: sevColor,
+            highlight: { background: `${sevColor}44`, border: sevColor },
+            hover: { background: `${sevColor}33`, border: sevColor },
+        },
+        font: { color: "#fef3c7", size: 12, face: "sans-serif", multi: true },
+        shape: "diamond",
+        borderWidth: 2,
+        borderWidthSelected: 3,
+        shadow: { enabled: true, color: `${sevColor}33`, size: 8 },
+        title: `<b>${c.label.replace('\n','')}</b><br>分类: ${categoryIcons[c.category] || ''} ${c.category}<br>严重程度: ${c.severity}`,
+        physics: true,
+    });
+});
+
+// 构建边
+const edges = new vis.DataSet([]);
+
+// 映射边
+EDGES.forEach(e => {
+    const width = Math.max(1, e.weight * 4);
+    const opacity = 0.3 + e.weight * 0.5;
+    edges.update({
+        from: e.from,
+        to: e.to,
+        value: e.weight,
+        width: width,
+        color: { color: `rgba(139,92,246,${opacity})`, highlight: "#a78bfa", hover: "#c4b5fd" },
+        arrows: { to: { enabled: true, scaleFactor: 0.6 } },
+        title: `${e.from} → ${e.to.replace('c_','')}\n权重: ${e.weight}\n${e.desc}`,
+        smooth: { type: "curvedCW", roundness: 0.15 },
+        dashes: false,
+    });
+});
+
+// 期望表象边（根因 → 表象，绿色虚线）
+const expectedLevelStyle = {
+    required:  { color: "rgba(34,197,94,0.7)",  dashes: [6,3],  width: 2.5 },
+    expected:  { color: "rgba(34,197,94,0.45)", dashes: [8,5],  width: 1.8 },
+    optional:  { color: "rgba(34,197,94,0.25)", dashes: [4,6],  width: 1.2 },
+};
+const expectedEdgeIds = [];
+EXPECTED_EDGES.forEach((e, i) => {
+    const style = expectedLevelStyle[e.level] || expectedLevelStyle.expected;
+    const eid = `exp_${i}`;
+    expectedEdgeIds.push(eid);
+    edges.update({
+        id: eid,
+        from: e.from,
+        to: e.to,
+        width: style.width,
+        color: { color: style.color, highlight: "#22c55e", hover: "#4ade80" },
+        arrows: { to: { enabled: true, scaleFactor: 0.5, type: "vee" } },
+        title: `[验证·${e.level}] ${e.from.replace('c_','')} → ${e.to}`,
+        smooth: { type: "curvedCCW", roundness: 0.2 },
+        dashes: style.dashes,
+    });
+});
+
+// 矛盾边
+CONTRADICTIONS.forEach(c => {
+    const color = c.type === "exclusive" ? "#ef4444" : "#f97316";
+    edges.update({
+        from: c.from,
+        to: c.to,
+        width: 2,
+        color: { color: `${color}88`, highlight: color, hover: color },
+        arrows: { to: { enabled: false } },
+        title: `[${c.type}] ${c.desc}`,
+        smooth: { type: "curvedCW", roundness: 0.3 },
+        dashes: [8, 4],
+    });
+});
+
+// =============================================================================
+// 创建网络图
+// =============================================================================
+
+const container = document.getElementById("network");
+const data = { nodes, edges };
+
+const options = {
+    physics: {
+        enabled: true,
+        barnesHut: {
+            gravitationalConstant: -3000,
+            centralGravity: 0.3,
+            springLength: 200,
+            springConstant: 0.04,
+            damping: 0.09,
+        },
+        stabilization: {
+            iterations: 200,
+        },
+    },
+    interaction: {
+        hover: true,
+        tooltipDelay: 150,
+        zoomView: true,
+        dragView: true,
+        multiselect: true,
+        navigationButtons: false,
+    },
+    layout: {
+        improvedLayout: true,
+    },
+};
+
+const network = new vis.Network(container, data, options);
+
+// =============================================================================
+// 交互事件
+// =============================================================================
+
+network.on("click", function (params) {
+    if (params.nodes.length === 1) {
+        const nodeId = params.nodes[0];
+        showNodeDetail(nodeId);
+    } else if (params.nodes.length === 0 && params.edges.length === 1) {
+        const edgeId = params.edges[0];
+        const edge = edges.get(edgeId);
+        if (edge) {
+            showEdgeDetail(edge);
+        }
+    }
+});
+
+network.on("doubleClick", function (params) {
+    if (params.nodes.length === 1) {
+        const nodeId = params.nodes[0];
+        highlightConnected(nodeId);
+    }
+});
+
+// =============================================================================
+// 面板功能
+// =============================================================================
+
+function showNodeDetail(nodeId) {
+    const node = nodes.get(nodeId);
+    if (!node) return;
+
+    const panel = document.getElementById("infoPanel");
+    const content = document.getElementById("panelContent");
+
+    const isPhenomenon = node.group === "phenomenon";
+    const connectedEdges = network.getConnectedEdges(nodeId);
+
+    let html = `<h3>${isPhenomenon ? "📊 表象节点" : "🔍 根因节点"}</h3>`;
+    html += `<div class="node-detail"><div class="label">名称</div><div class="value" style="font-size:18px;font-weight:600;">${node.label.replace(/\n/g, ' ')}</div></div>`;
+
+    if (isPhenomenon) {
+        const pNode = PHENOMENON_NODES.find(p => p.id === nodeId);
+        if (pNode) {
+            html += `<div class="node-detail"><div class="label">阈值</div><div class="value">${pNode.threshold}</div></div>`;
+            html += `<div class="node-detail"><div class="label">说明</div><div class="value">${pNode.desc}</div></div>`;
+        }
+    } else {
+        const cNode = CAUSE_NODES.find(c => c.id === nodeId);
+        if (cNode) {
+            html += `<div class="node-detail"><div class="label">分类</div><div class="value">${categoryIcons[cNode.category] || ''} ${cNode.category}</div></div>`;
+            html += `<div class="node-detail"><div class="label">严重程度</div><div class="value" style="color:${severityColors[cNode.severity]}">${cNode.severity}</div></div>`;
+            html += `<div class="node-detail"><div class="label">说明</div><div class="value">${cNode.desc}</div></div>`;
+        }
+    }
+
+    // 关联边信息
+    const relevantEdges = EDGES.filter(e => e.from === nodeId || e.to === nodeId);
+    relevantEdges.sort((a, b) => b.weight - a.weight);
+
+    if (relevantEdges.length > 0) {
+        html += `<div class="node-detail" style="margin-top:16px;"><div class="label">关联关系 (${relevantEdges.length})</div>`;
+        relevantEdges.forEach(e => {
+            const target = e.from === nodeId ? e.to.replace('c_', '') : e.from;
+            const pct = (e.weight / 1.0) * 100;
+            html += `<div class="weight-bar">
+                <span class="bar-label">${target}</span>
+                <div class="bar"><div class="bar-fill" style="width:${pct}%"></div></div>
+                <span class="bar-value">${e.weight}</span>
+            </div>`;
+        });
+        html += `</div>`;
+    }
+
+    // 矛盾规则
+    const contradictions = CONTRADICTIONS.filter(c => c.from === nodeId || c.to === nodeId);
+    if (contradictions.length > 0) {
+        html += `<div class="node-detail" style="margin-top:12px;"><div class="label" style="color:#ef4444;">矛盾规则 (${contradictions.length})</div>`;
+        contradictions.forEach(c => {
+            const other = c.from === nodeId ? c.to : c.from;
+            html += `<div style="font-size:13px;color:#fca5a5;margin:4px 0;">
+                <span style="color:${c.type === 'exclusive' ? '#ef4444' : '#f97316'}">[${c.type}]</span>
+                ↔ ${other}: ${c.desc}
+            </div>`;
+        });
+        html += `</div>`;
+    }
+
+    content.innerHTML = html;
+    panel.classList.add("open");
+}
+
+function showEdgeDetail(edge) {
+    const panel = document.getElementById("infoPanel");
+    const content = document.getElementById("panelContent");
+
+    const fromNode = nodes.get(edge.from);
+    const toNode = nodes.get(edge.to);
+
+    let html = `<h3>🔗 映射关系</h3>`;
+    html += `<div class="node-detail">
+        <div class="label">表象</div>
+        <div class="value">${fromNode ? fromNode.label.replace(/\n/g, ' ') : edge.from}</div>
+    </div>`;
+    html += `<div class="node-detail">
+        <div class="label">根因</div>
+        <div class="value">${toNode ? toNode.label.replace(/\n/g, ' ') : edge.to}</div>
+    </div>`;
+
+    const edgeData = EDGES.find(e => e.from === edge.from && e.to === edge.to);
+    if (edgeData) {
+        const pct = (edgeData.weight / 1.0) * 100;
+        html += `<div class="node-detail">
+            <div class="label">权重</div>
+            <div class="weight-bar">
+                <span class="bar-label">${edgeData.weight}</span>
+                <div class="bar"><div class="bar-fill" style="width:${pct}%"></div></div>
+                <span class="bar-value">${edgeData.weight}</span>
+            </div>
+        </div>`;
+        html += `<div class="node-detail">
+            <div class="label">说明</div>
+            <div class="value">${edgeData.desc}</div>
+        </div>`;
+    }
+
+    content.innerHTML = html;
+    panel.classList.add("open");
+}
+
+function highlightConnected(nodeId) {
+    const connectedNodes = network.getConnectedNodes(nodeId);
+    connectedNodes.push(nodeId);
+
+    const allNodes = nodes.getIds();
+    const updateList = allNodes.map(id => ({
+        id,
+        opacity: connectedNodes.includes(id) ? 1.0 : 0.15,
+    }));
+    nodes.update(updateList);
+
+    const connectedEdges = network.getConnectedEdges(nodeId);
+    const allEdges = edges.getIds();
+    const edgeUpdateList = allEdges.map(id => ({
+        id,
+        opacity: connectedEdges.includes(id) ? 1.0 : 0.05,
+    }));
+    edges.update(edgeUpdateList);
+
+    // 3秒后恢复
+    setTimeout(() => {
+        const restoreNodes = allNodes.map(id => ({ id, opacity: 1.0 }));
+        nodes.update(restoreNodes);
+        const restoreEdges = allEdges.map(id => ({ id, opacity: 1.0 }));
+        edges.update(restoreEdges);
+    }, 3000);
+}
+
+function closePanel() {
+    document.getElementById("infoPanel").classList.remove("open");
+}
+
+// =============================================================================
+// 工具栏功能
+// =============================================================================
+
+let physicsEnabled = true;
+let expectedVisible = true;
+
+function toggleExpected() {
+    expectedVisible = !expectedVisible;
+    const updates = expectedEdgeIds.map(id => ({ id, hidden: !expectedVisible }));
+    edges.update(updates);
+    document.getElementById("expectedBtn").textContent = `验证边: ${expectedVisible ? '开' : '关'}`;
+    document.getElementById("expectedBtn").classList.toggle('active', expectedVisible);
+}
+
+function togglePhysics() {
+    physicsEnabled = !physicsEnabled;
+    network.setOptions({ physics: { enabled: physicsEnabled } });
+    document.getElementById("physicsBtn").textContent = `物理模拟: ${physicsEnabled ? '开' : '关'}`;
+    document.getElementById("physicsBtn").classList.toggle('active', physicsEnabled);
+}
+
+function resetView() {
+    network.fit({ animation: { duration: 500, easingFunction: "easeInOutQuad" } });
+    closePanel();
+}
+
+// 初始适配视图
+network.once("stabilizationIterationsDone", function () {
+    network.fit({ animation: true });
+});
+</script>
+
+</body>
+</html>
